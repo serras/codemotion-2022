@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Mapping Right and Wrong</title>
+    <meta charset="utf-8">
+    <style>
+      /* @import url(https://fonts.googleapis.com/css?family=Yanone+Kaffeesatz);
+      @import url(https://fonts.googleapis.com/css?family=Droid+Serif:400,700,400italic);
+      @import url(https://fonts.googleapis.com/css?family=Ubuntu+Mono:400,700,400italic); */
+      @import url(css/metropolis.css);
+    </style>
+  </head>
+  <body>
+    <textarea id="source">
+
+class: center, middle, title-slide
+count: false
+
+# Mapping Right and Wrong
+## .font90[Alejandro Serrano @ Codemotion 2022]
+
+.less-line-height[
+.grey[🐦 @trupill - 🐈‍⬛ serras - 👨‍💻 Tweag]
+]
+
+---
+
+# Goal
+
+### .grey[Get a new perspective on error handling]
+
+---
+
+# Goal
+
+### .grey[Get a new perspective on error handling]
+
+.margin-top[
+- Inspired by **functional** patterns
+- **No** sharp **distinction** between <br /> the _happy_ and the _error_ paths
+]
+
+.code50[
+```kotlin
+fun friendsOf(name: String): List<String> {
+  try {                                 // 👍 happy path
+    val p = findPerson(name)
+    return p.friends().map { it.name }
+  } catch (e: DbConnectionException) {  // 👎 error path
+    return emptyList()
+  }
+}
+```
+]
+
+---
+
+# Breaking the distinction
+
+The happy path is represented as a series of **data** transformations
+
+The error path uses different features, namely **exceptions**, which we cannot manipulate
+
+---
+
+# Breaking the distinction
+
+The happy path is represented as a series of **data** transformations
+
+The error path uses different features, namely **exceptions**, which we cannot manipulate
+
+## .grey[Let's turn exceptions ⚡ into data 🧱]
+
+---
+
+# Introducing Result
+
+Available under many different names
+
+.code70[
+```kotlin
+// Kotlin (very similar in Scala)
+sealed interface Result<out E, out T>
+data class Error<out E>(val problem: E)
+  : Result<E, Nothing>
+data class Success<out T>(val result: E)
+  : Result<Nothing, T>
+```
+
+```haskell
+-- Haskell
+data Either e t = Left e | Right t
+```
+]
+
+---
+
+# Result in the signature
+
+Errors are now part of the function signature
+
+```kotlin
+fun friendsOf(name: String)
+  : Result<DbConnectionError, List<String>>
+```
+
+---
+
+# Result in the signature
+
+Errors are now part of the function signature
+
+.code70[
+```kotlin
+fun friendsOf(name: String)
+  : Result<DbConnectionError, List<String>>
+```
+]
+
+### Benefit #1: .grey[documentation] 🕮
+
+.margin-top[
+- Easily distinguish which function may error
+- And also **which** errors may be raised
+] 
+
+---
+
+# Result in the signature
+
+Errors are now part of the function signature
+
+.code70[
+```kotlin
+fun friendsOf(name: String)
+  : Result<DbConnectionError, List<String>>
+```
+]
+
+### Benefit #1: .grey[documentation] 🕮
+
+.margin-top[
+- Easily distinguish which function may error
+- And also **which** errors may be raised
+] 
+
+Maybe Java's `throws` was not that bad? 🤔
+
+---
+
+# Combining results
+
+We have two different operations depending
+on whether the next step may also fail
+
+---
+
+# Combining results
+
+We have two different operations depending
+on whether the next step may also fail
+
+Starting with `findPerson`:
+
+- Obtaining the age does not incur in possible error, we just look it up in memory
+- Obtaining the friend list does, because we need to talk to the DB again
+
+---
+
+# Combining results
+
+.grey[Remember], now whether something fails is **apparent** from its signature
+
+.code70[
+```kotlin
+fun findPerson(name: String)
+  : Result<DbConnectionError, Person>
+
+val Person.name: String  // no Result
+val Person.age: Int      // means no error
+
+fun Person.friends()
+  : Result<DbConnectionError, List<Person>>
+```
+]
+
+---
+
+# Combining results
+
+.grey[Remember], now whether something fails is **apparent** from its signature 
+.grey[.smaller[(if we follow the rules)]]
+
+.code70[
+```kotlin
+fun findPerson(name: String)
+  : Result<DbConnectionError, Person>
+
+val Person.name: String  // no Result
+val Person.age: Int      // means no error
+
+fun Person.friends()
+  : Result<DbConnectionError, List<Person>>
+```
+]
+
+---
+
+# Result + no problem = map
+
+.code70[
+```kotlin
+fun findPerson(name: String)
+  : Result<DbConnectionError, Person>
+val Person.age: Int
+
+fun findPersonAge(name: String)
+  : Result<DbConnectionError, Int>
+  = findPerson(name).map { p -> p.age }
+```
+]
+
+---
+
+# Result + no problem = map
+
+.code70[
+```kotlin
+fun findPerson(name: String)
+  : Result<DbConnectionError, Person>
+val Person.age: Int
+
+fun findPersonAge(name: String)
+  : Result<DbConnectionError, Int>
+  = findPerson(name).map { p -> p.age }
+```
+]
+
+Functions-as-arguments are essential here
+
+.code80[
+```kotlin
+fun <E, A, B> Result<E, A>
+  .map(f: (x: A) -> B): Result<E, B>
+```
+]
+
+---
+
+# Implementing map
+
+.code80[
+```kotlin
+fun <E, A, B> Result<E, A>
+  .map(f: (x: A) -> B): Result<E, B>
+```
+]
+
+Two cases for `Result`:
+
+---
+
+# Implementing map
+
+.code80[
+```kotlin
+fun <E, A, B> Result<E, A>
+  .map(f: (x: A) -> B): Result<E, B>
+```
+]
+
+Two cases for `Result`:
+
+👍 If we have a `Success`, we can extract <br /> &nbsp;&nbsp;&nbsp;&nbsp; the field of type `A` and apply `f` to get a `B`
+
+---
+
+# Implementing map
+
+.code80[
+```kotlin
+fun <E, A, B> Result<E, A>
+  .map(f: (x: A) -> B): Result<E, B>
+```
+]
+
+Two cases for `Result`:
+
+👍 If we have a `Success`, we can extract <br /> &nbsp;&nbsp;&nbsp;&nbsp; the field of type `A` and apply `f` to get a `B`
+
+👎 If we have an `Error`, we keep it the same <br /> &nbsp;&nbsp;&nbsp;&nbsp; (`A` or `B` in the type doesn't matter)
+
+---
+
+# Result + Result = flatMap
+
+.code70[
+```kotlin
+fun findPerson(name: String)
+  : Result<DbConnectionError, Person>
+fun Person.friends()
+  : Result<DbConnectionError, List<Person>>
+
+fun findFriendNames(name: String)
+  : Result<DbConnectionError, List<String>>
+  = findPerson(name)
+      .flatMap { p -> p.friends() }
+      .map     { p -> p.name }
+```
+]
+
+`flatMap` is also known as `bind` or `(>>=)`
+
+---
+
+# Functional patterns
+
+This means that `Result` is a **functor**
+
+.code80[
+```kotlin
+fun <E, A, B> Result<E, A>
+  .map(f: (x: A) -> B)
+    : Result<E, B>
+```
+]
+
+And this that `Result` is a **monad**
+
+.code80[
+```kotlin
+fun <E, A, B> Result<E, A>
+  .flatMap(f: (x: A) -> Result<E, B>)
+    : Result<E, B>
+```
+]
+
+---
+
+class: center, middle, title-slide
+
+# What about handling errors?
+
+---
+
+# Imagining a catch
+
+How does an API similar to `map`/`flatMap` look?
+
+---
+
+# Imagining a catch
+
+How does an API similar to `map`/`flatMap` look?
+
+```kotlin
+findFriendNames(names)
+  .catch { e -> Success(emptyList()) }
+```
+
+---
+
+# Imagining a catch
+
+How does an API similar to `map`/`flatMap` look?
+
+```kotlin
+findFriendNames(names)
+  .catch { e -> Success(emptyList()) }
+```
+
+.margin-top[
+- `catch` does nothing on `Success` values
+- We receive the error as argument
+- We must produce another `Result`, since the "handling" function may itself error out
+]
+
+---
+
+# Catching always works
+
+In case you are wondering about this part
+
+.font80[
+> We must produce another `Result`, since the "handling" function may itself error out
+]
+
+It can be easily implemented with `catch`
+
+.code70[
+```kotlin
+fun <T, A> Result<T, A>.catchOk(h: (e: T) -> A)
+  : Result<T, A>
+  = this.catch { e -> Success(f(e)) }
+```
+]
+
+---
+
+# Imagining a catch
+
+```kotlin
+findFriendNames(names)
+  .catch { e -> Success(emptyList()) }
+```
+
+```kotlin
+fun Result<T, A>
+  .catch(h: (    ) -> Result< ,  >)
+  : Result< ,  >
+```
+
+This is the general skeleton of the function
+
+---
+
+# Imagining a catch
+
+```kotlin
+findFriendNames(names)
+  .catch { e -> Success(emptyList()) }
+```
+
+```kotlin
+fun Result<T, A>
+  .catch(h: (e: T) -> Result< ,  >)
+  : Result< ,  >
+```
+
+The handler takes the error as argument
+
+---
+
+# Imagining a catch
+
+```kotlin
+findFriendNames(names)
+  .catch { e -> Success(emptyList()) }
+```
+
+```kotlin
+fun Result<T, A>
+  .catch(h: (e: T) -> Result< , B>)
+  : Result< ,  >
+```
+
+🚩 The result **must** have the same happy path type, because `h` is not executed on that case
+
+---
+
+# Imagining a catch
+
+```kotlin
+findFriendNames(names)
+  .catch { e -> Success(emptyList()) }
+```
+
+```kotlin
+fun Result<T, A>
+  .catch(h: (e: T) -> Result<T, A>)
+  : Result<T, A>
+```
+
+It seems that we are done! ☑️
+
+---
+
+# Imagining a catch
+
+```kotlin
+findFriendNames(names)
+  .catch { e -> Success(emptyList()) }
+```
+
+```kotlin
+fun Result<T, A>
+  .catch(h: (e: T) -> Result<R, A>)
+  : Result<R, A>
+```
+
+Actually we can generalize even more
+
+- The error type may change during handling
+- The happy path is not affected by this
+
+---
+
+# flatMap and catch
+
+```kotlin
+fun <T, A, B> Result<T, A>
+  .flatMap(f: (x: A) -> Result<T, B>)
+  : Result<T, B>
+
+fun <T, R, A> Result<T, A>
+  .catch(h: (e: T) -> Result<R, A>)
+  : Result<R, A>
+```
+
+Each of them *fixes* one part of the type and *changes* the other
+
+---
+
+# flatMap and catch
+
+Using terser (Haskell) syntax
+
+```haskell
+flatMap :: Either t a
+        -> (a -> Either t b) -> Either t b
+catch   :: Either t a
+        -> (t -> Either r a) -> Either r a
+```
+
+---
+
+# flatMap and catch
+
+Using terser (Haskell) syntax
+
+```haskell
+flatMap :: Either t a
+        -> (a -> Either t b) -> Either t b
+catch   :: Either t a
+        -> (t -> Either r a) -> Either r a
+```
+
+The happy path and the error path are now treated ✨ **symmetrically** ✨
+
+---
+
+# map and ???
+
+Is there a symmetric version of `map`?
+
+```kotlin
+fun <T, A, B> Result<T, A>
+  .map(f: (x: A) -> B) : Result<T, B>
+
+fun <T, R, A> Result<T, A>
+  .🥷(h: (e: T) -> R) : Result<R, A>
+```
+
+🥷 changes the error type of `Result`
+
+---
+
+# Different error types
+
+.code70[
+```kotlin
+fun findPerson(name: String)
+  : Result<DbConnectionError, Person>
+fun downloadAvatar(id: String)
+  : Result<NetworkProblem, Image>
+
+// does not work 😭
+fun findAvatarFor(name: String)
+  = findPerson(name)
+    .flatMap { p -> downloadAvatar(p.id) }
+```
+]
+
+---
+
+# Different error types
+
+.code70[
+```kotlin
+fun findPerson(name: String)
+  : Result<DbConnectionError, Person>
+fun downloadAvatar(id: String)
+  : Result<NetworkProblem, Image>
+
+// does not work 😭
+fun findAvatarFor(name: String)
+  = findPerson(name)
+    .flatMap { p -> downloadAvatar(p.id) }
+```
+]
+
+`flatMap` requires `findPerson` and `downloadAvatar` to **share** their error type
+
+---
+
+# Common error type
+
+This type describes all errors that may arise
+
+.code70[
+```kotlin
+sealed interface AvatarProblem
+data class DbAvatarProblem(e: DbConnectionError)
+  : AvatarProblem
+data class NetAvatarProblem(e: NetworkProblem)
+  : AvatarProblem
+```
+]
+
+---
+
+# Common error type
+
+.code60[
+```kotlin
+sealed interface AvatarProblem
+data class DbAvatarProblem(e: DbConnectionError): ...
+data class NetAvatarProblem(e: NetworkProblem): ...
+```
+]
+
+We inject the constructors with 🥷
+
+.code70[
+```kotlin
+fun findAvatarFor(name: String)
+  = findPerson(name)
+    .🥷 { e -> DbAvatarProblem(e) }
+    .flatMap { p -> 
+      downloadAvatar(p.id)
+      .🥷 { e -> NetAvatarProblem(e) }
+    }
+```
+]
+
+---
+
+# Common error type
+
+.code60[
+```kotlin
+sealed interface AvatarProblem
+data class DbAvatarProblem(e: DbConnectionError): ...
+data class NetAvatarProblem(e: NetworkProblem): ...
+```
+]
+
+We inject the constructors with `mapError`
+
+.code70[
+```kotlin
+fun findAvatarFor(name: String)
+  = findPerson(name)
+    .mapError { e -> DbAvatarProblem(e) }
+    .flatMap { p -> 
+      downloadAvatar(p.id)
+      .mapError { e -> NetAvatarProblem(e) }
+    }
+```
+]
+
+---
+
+# Summary
+
+Happy and error paths share **symmetric** ops.
+
+➡️ Transform the value in that path <br />
+⏭️ Execute another `Result` in one path <br />
+&nbsp;&nbsp;&nbsp;&nbsp; 🔗 Sequencing for the happy path <br />
+&nbsp;&nbsp;&nbsp;&nbsp; 🪤 And `catch` for the error path
+
+---
+
+# Summary
+
+Happy and error paths share **symmetric** ops.
+
+➡️ Transform the value in that path <br />
+⏭️ Execute another `Result` in one path <br />
+&nbsp;&nbsp;&nbsp;&nbsp; 🔗 Sequencing for the happy path <br />
+&nbsp;&nbsp;&nbsp;&nbsp; 🪤 And `catch` for the error path
+
+We have discovered **functional patterns**
+
+- Functions-as-arguments
+- Looking and generalizing the types
+
+---
+
+# Fancy names summary
+
+If you really want to "impress" your friends...
+
+- `Result` is a **bifunctor**
+- and also a **bimonad**
+
+---
+
+# Fancy names summary
+
+If you really want to "impress" your friends...
+
+- `Result` is a **bifunctor**
+- and also a **bimonad**
+
+which just means that...
+
+- it comes with two `map`-like functions
+    - one for each of its two type arguments
+- and the same with `flatMap`
+    - here the error one is `catch`
+
+---
+
+class: center, middle, title-slide
+
+# 🤩 It's been a pleasure
+
+## Enjoy the rest of Codemotion!
+
+    </textarea>
+    <script src="https://remarkjs.com/downloads/remark-latest.min.js">
+    </script>
+    <script>
+      var slideshow = remark.create();
+    </script>
+  </body>
+</html>
